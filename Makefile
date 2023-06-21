@@ -42,13 +42,13 @@ ifeq ($(USE_IMAGE_DIGESTS), true)
 endif
 
 # Image URL to use all building/pushing image targets
-IMG_REPOSITORY ?= quay.io/kubevirt/ssp-operator
-IMG_TAG ?= latest
+IMG_REPOSITORY ?= quay.io/jcanocan/ssp-operator
+IMG_TAG ?= devel
 IMG ?= ${IMG_REPOSITORY}:${IMG_TAG}
 
 # Image URL variables for template-validator
-VALIDATOR_REPOSITORY ?= quay.io/kubevirt/kubevirt-template-validator
-VALIDATOR_IMG_TAG ?= latest
+VALIDATOR_REPOSITORY ?= quay.io/jcanocan/kubevirt-template-validator
+VALIDATOR_IMG_TAG ?= devel
 VALIDATOR_IMG ?= ${VALIDATOR_REPOSITORY}:${VALIDATOR_IMG_TAG}
 
 CRD_OPTIONS ?= "crd:generateEmbeddedObjectMeta=true"
