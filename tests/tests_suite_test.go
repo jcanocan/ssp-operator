@@ -3,8 +3,10 @@ package tests
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
+	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
 
@@ -616,6 +618,103 @@ func TestFunctional(t *testing.T) {
 		reporters = append(reporters, &qe_reporters.Polarion)
 	}
 
-	RegisterFailHandler(Fail)
+	RegisterFailHandler(E2EFailHandler)
 	RunSpecsWithDefaultAndCustomReporters(t, "Functional test suite", reporters)
+}
+
+type deploymentDescription struct {
+	name      string
+	namespace string
+}
+
+func E2EFailHandler(message string, callerSkip ...int) {
+	printPodsLogs([]deploymentDescription{
+		{
+			name:      "ssp-operator",
+			namespace: "kubevirt",
+		},
+		{
+			name:      "virt-template-validator",
+			namespace: "ssp-operator-functests",
+		},
+	})
+	Fail(message, callerSkip...)
+}
+
+func printPodsLogs(description []deploymentDescription) {
+	for _, deployment := range description {
+		deploDescription := &apps.Deployment{}
+		pods, err := coreClient.CoreV1().Pods(deployment.namespace).List(ctx, metav1.ListOptions{LabelSelector: "name=" + deployment.name})
+		if err != nil {
+			fmt.Fprintf(GinkgoWriter, "Failed to get logs for pods from deployment %s: %v\n", deployment, err)
+			continue
+		}
+
+		err = apiClient.Get(ctx, client.ObjectKey{
+			Name:      deployment.name,
+			Namespace: deployment.namespace,
+		}, deploDescription)
+
+		if err != nil {
+			fmt.Fprintf(GinkgoWriter, "Failed to get deployment %s: %v\n", deployment.name, err)
+		} else {
+			out, err := yaml.Marshal(deploDescription)
+			if err != nil {
+				fmt.Fprintf(GinkgoWriter, "Failed to get marshal %s: %v\n", deployment.name, err)
+			}
+			fmt.Fprintf(GinkgoWriter,
+				"\n\n===== Deployment description of %q  =====\n%s\n==============================================\n\n",
+				deployment.name,
+				string(out))
+		}
+
+		for _, pod := range pods.Items {
+			//TODO: review PodLogOptions
+			err := getSinglePodLog(pod)
+			if err != nil {
+				fmt.Fprintf(GinkgoWriter, "Failed to get logs for pod %s: %v\n", pod.Name, err)
+			}
+			out, err := yaml.Marshal(deploDescription)
+			if err != nil {
+				fmt.Fprintf(GinkgoWriter, "Failed to get marshal %s: %v\n", deployment.name, err)
+			}
+			fmt.Fprintf(GinkgoWriter,
+				"\n\n===== Pod description of %q  =====\n%s\n==============================================\n\n",
+				pod.Name,
+				string(out))
+		}
+	}
+}
+
+func getSinglePodLog(pod v1.Pod) error {
+	req := coreClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &v1.PodLogOptions{})
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	/*file, err := os.Create(pod.Name + "_logs.log")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, stream)
+
+	if err != nil {
+		return err
+	}*/
+
+	logBytes, err := io.ReadAll(stream)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(GinkgoWriter,
+		"\n\n===== Logs for pod %q  =====\n%s\n==============================================\n\n",
+		pod.Name,
+		string(logBytes))
+	return nil
 }
