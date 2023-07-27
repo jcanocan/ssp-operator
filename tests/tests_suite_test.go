@@ -3,8 +3,10 @@ package tests
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
+	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
 
@@ -616,6 +618,127 @@ func TestFunctional(t *testing.T) {
 		reporters = append(reporters, &qe_reporters.Polarion)
 	}
 
-	RegisterFailHandler(Fail)
+	RegisterFailHandler(E2EFailHandler)
 	RunSpecsWithDefaultAndCustomReporters(t, "Functional test suite", reporters)
+}
+
+type deploymentDescription struct {
+	name      string
+	namespace string
+}
+
+func E2EFailHandler(message string, callerSkip ...int) {
+	printPodsLogs([]deploymentDescription{
+		{
+			name:      "ssp-operator",
+			namespace: "openshift-cnv",
+		},
+		{
+			name:      "virt-template-validator",
+			namespace: "openshift-cnv",
+		},
+	})
+	Fail(message, callerSkip...)
+}
+
+func printPodsLogs(description []deploymentDescription) {
+	ssp := getSsp()
+	out, err := yaml.Marshal(ssp)
+
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Failed to marshal ssp cr\n"))
+	} else {
+		fmt.Println(fmt.Sprintf("\n\n===== SSP description of %q  =====\n%s\n==============================================\n\n",
+			ssp.Name,
+			string(out)))
+	}
+
+	virtReplicaSets, err := coreClient.AppsV1().ReplicaSets(description[1].namespace).List(ctx, metav1.ListOptions{LabelSelector: "name=" + description[1].name})
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Failed to get virt-template replicaSets: %v\n", err))
+	}
+
+	for _, replicasSet := range virtReplicaSets.Items {
+		out, err := yaml.Marshal(replicasSet)
+
+		if err != nil {
+			fmt.Println(fmt.Sprintf("Failed to marshal %s: %v\n", replicasSet.Name, err))
+		}
+		fmt.Println(fmt.Sprintf("\n\n===== ReplicaSet description of %q  =====\n%s\n==============================================\n\n",
+			replicasSet.Name,
+			string(out)))
+	}
+
+	for _, deployment := range description {
+		deploDescription := &apps.Deployment{}
+		pods, err := coreClient.CoreV1().Pods(deployment.namespace).List(ctx, metav1.ListOptions{LabelSelector: "name=" + deployment.name})
+		if err != nil {
+			fmt.Println(fmt.Sprintf("Failed to get logs for pods from deployment %s: %v\n", deployment, err))
+			continue
+		}
+
+		err = apiClient.Get(ctx, client.ObjectKey{
+			Name:      deployment.name,
+			Namespace: deployment.namespace,
+		}, deploDescription)
+
+		if err != nil {
+			fmt.Println(fmt.Sprintf("Failed to get deployment %s: %v\n", deployment.name, err))
+		} else {
+			out, err := yaml.Marshal(deploDescription)
+			if err != nil {
+				fmt.Println(fmt.Sprintf("Failed to get marshal %s: %v\n", deployment.name, err))
+			}
+			fmt.Println(fmt.Sprintf("\n\n===== Deployment description of %q  =====\n%s\n==============================================\n\n",
+				deployment.name,
+				string(out)))
+		}
+
+		for _, pod := range pods.Items {
+			//TODO: review PodLogOptions
+			err := getSinglePodLog(pod)
+			if err != nil {
+				fmt.Println(fmt.Sprintf("Failed to get logs for pod %s: %v\n", pod.Name, err))
+			}
+			out, err := yaml.Marshal(deploDescription)
+			if err != nil {
+				fmt.Println(fmt.Sprintf("Failed to get marshal %s: %v\n", deployment.name, err))
+			}
+			fmt.Println(fmt.Sprintf("\n\n===== Pod description of %q  =====\n%s\n==============================================\n\n",
+				pod.Name,
+				string(out)))
+		}
+	}
+}
+
+func getSinglePodLog(pod v1.Pod) error {
+	req := coreClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &v1.PodLogOptions{})
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	/*file, err := os.Create(pod.Name + "_logs.log")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, stream)
+
+	if err != nil {
+		return err
+	}*/
+
+	logBytes, err := io.ReadAll(stream)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(fmt.Sprintf("\n\n===== Logs for pod %q  =====\n%s\n==============================================\n\n",
+		pod.Name,
+		string(logBytes)))
+	return nil
 }
