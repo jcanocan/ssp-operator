@@ -807,6 +807,9 @@ var _ = Describe("Template validator webhooks", func() {
 		})
 
 		It("[test_id:7037] Can delete template without validations if a VM uses it", func() {
+			test := false
+			Expect(test).To(BeTrue())
+
 			template = TemplateWithoutRules()
 			delete(template.Annotations, "validations")
 
