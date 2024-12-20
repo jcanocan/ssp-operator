@@ -27,6 +27,26 @@ rules:
 - apiGroups:
   - admissionregistration.k8s.io
   resources:
+  - validatingadmissionpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingadmissionpolicybindings
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
   - validatingwebhookconfigurations
   verbs:
   - create

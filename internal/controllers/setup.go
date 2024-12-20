@@ -98,6 +98,8 @@ func CreateControllers(ctx context.Context, apiReader client.Reader) ([]Controll
 		NewWebhookConfigurationController(),
 		NewVmController(),
 		NewSspController(infrastructureTopology, sspOperands),
+		NewVAPController(),
+		NewVAPBController(),
 	}, nil
 }
 
